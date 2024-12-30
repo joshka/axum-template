@@ -1,5 +1,5 @@
 [package]
-name = "simple-template-generated"
+name = "simple-generated"
 version = "0.1.0"
 authors = ["Josh McKinney <joshka@users.noreply.github.com>"]
 edition = "2021"
