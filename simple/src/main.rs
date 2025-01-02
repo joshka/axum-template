@@ -1,52 +1,41 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
 use axum::{routing::get, Router};
-use clap::Parser;
-use clap_verbosity_flag::{InfoLevel, Verbosity};
-use tokio::net::TcpListener;
-use tracing::info;
+use cli::Cli;
+use color_eyre::Result;
+use tracing::{error, info};
+
+mod cli;
+mod tls;
 
 #[tokio::main]
-async fn main() -> color_eyre::Result<()> {
-    let args = Cli::parse();
+async fn main() -> Result<()> {
+    let args = cli::args();
     color_eyre::install()?;
     tracing_subscriber::fmt::fmt()
         .with_max_level(args.verbosity)
         .init();
+    run(args).await
+}
 
-    let listener = TcpListener::bind(args.addr()).await?;
-    let addr = format!("http://{}", listener.local_addr()?);
-    info!("Listening on: {addr}");
+async fn run(args: Cli) -> Result<()> {
+    let handle = axum_server::Handle::new();
+    let addr = (args.ip, args.port).into();
+    let config = tls::init(args.data_dir).await?;
+    let server = axum_server::bind_rustls(addr, config).handle(handle.clone());
+    let app = router().into_make_service();
+    let server_task = tokio::spawn(server.serve(app));
+    let Some(addr) = handle.listening().await else {
+        error!("failed to start server");
+        return Ok(());
+    };
+
+    let addr = format!("https://{addr}");
+    info!("Listening on {addr}");
     if args.open {
-        webbrowser::open(&addr)?;
+        webbrowser::open(&addr).ok();
     }
-    axum::serve(listener, router()).await?;
+
+    server_task.await??;
     Ok(())
-}
-
-#[derive(Debug, Parser)]
-struct Cli {
-    /// Verbosity flags (--verbose / --quiet) for logging
-    #[command(flatten)]
-    verbosity: Verbosity<InfoLevel>,
-
-    /// The IP address to bind to
-    #[arg(long, short, default_value_t = Ipv4Addr::LOCALHOST.into())]
-    bind: IpAddr,
-
-    /// The port to bind to
-    #[arg(long, short, default_value = "3000")]
-    port: u16,
-
-    /// Open the browser after starting the server
-    #[arg(long)]
-    open: bool,
-}
-
-impl Cli {
-    pub fn addr(&self) -> SocketAddr {
-        (self.bind, self.port).into()
-    }
 }
 
 fn router() -> Router {
