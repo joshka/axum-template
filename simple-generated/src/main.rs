@@ -15,21 +15,32 @@ async fn main() -> color_eyre::Result<()> {
         .init();
 
     let listener = TcpListener::bind(args.addr()).await?;
-    info!("Listening on: http://{}", listener.local_addr()?);
+    let addr = format!("http://{}", listener.local_addr()?);
+    info!("Listening on: {addr}");
+    if args.open {
+        webbrowser::open(&addr)?;
+    }
     axum::serve(listener, router()).await?;
     Ok(())
 }
 
 #[derive(Debug, Parser)]
 struct Cli {
+    /// Verbosity flags (--verbose / --quiet) for logging
     #[command(flatten)]
     verbosity: Verbosity<InfoLevel>,
 
+    /// The IP address to bind to
     #[arg(long, short, default_value_t = Ipv4Addr::LOCALHOST.into())]
     bind: IpAddr,
 
+    /// The port to bind to
     #[arg(long, short, default_value = "3000")]
     port: u16,
+
+    /// Open the browser after starting the server
+    #[arg(long)]
+    open: bool,
 }
 
 impl Cli {
